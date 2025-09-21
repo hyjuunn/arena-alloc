@@ -101,12 +101,13 @@ void *j_malloc(size_t size) {
     } 
     // found
     else {
-        if (blk->size >= size + header_size() + ALIGNMENT) {
+        size_t old_size = blk->size;
+        if (old_size >= size + header_size() + ALIGNMENT) {
             split_block(blk, size);
         }
         blk->free = 0;
         // reduce free bytes count
-        g_free_bytes -= blk->size;
+        g_free_bytes -= old_size;
     }
 
     // return pointer to payload (after header)
@@ -143,18 +144,19 @@ void *j_realloc(void *ptr, size_t new_size) {
     new_size = ALIGN_UP(new_size, ALIGNMENT);
     // get block header from payload pointer
     block_header_t *blk = (block_header_t*)((uint8_t*)ptr - header_size());
+    size_t old_size = blk->size;
 
     // if the current block is large enough
     // split if there is enough space left
-    if (blk->size >= new_size) {
-        if (blk->size >= new_size + header_size() + ALIGNMENT) {
+    if (old_size >= new_size) {
+        if (old_size >= new_size + header_size() + ALIGNMENT) {
             split_block(blk, new_size);
         }
         return ptr;
     }
 
     // if the next block exists and is free, and if merging with it can satisfy new_size
-    if (blk->next && blk->next->free && (blk->size + header_size() + blk->next->size) >= new_size) {
+    if (blk->next && blk->next->free && (old_size + header_size() + blk->next->size) >= new_size) {
         block_header_t *n = blk->next;
         // merge sizes
         blk->size += header_size() + n->size;
@@ -174,7 +176,8 @@ void *j_realloc(void *ptr, size_t new_size) {
     if (!new_ptr) return NULL;
     // data copy
     // memcpy(dest, src, n)
-    memcpy(new_ptr, ptr, blk->size);
+    size_t keep = old_size < new_size ? old_size : new_size;
+    memcpy(new_ptr, ptr, keep);
     // free old block
     j_free(ptr);
     return new_ptr;
@@ -295,9 +298,10 @@ static block_header_t* coalesce(block_header_t *blk) {
         // update links
         blk->next = n->next;
         // if there is a next block, update its prev pointer
-        if (blk->next) blk->next->prev = blk; else g_tail = blk;
+        if (blk->next) blk->next->prev = blk; 
+        else g_tail = blk;
 
-        g_free_bytes -= header_size();
+        g_free_bytes += header_size();
     }
     // merge with prev if free
     // merge to the previous block, return the previous block pointer
@@ -305,8 +309,9 @@ static block_header_t* coalesce(block_header_t *blk) {
         block_header_t *p = blk->prev;
         p->size += header_size() + blk->size;
         p->next = blk->next;
-        if (p->next) p->next->prev = p; else g_tail = p;
-        g_free_bytes -= header_size();
+        if (p->next) p->next->prev = p; 
+        else g_tail = p;
+        g_free_bytes += header_size();
         blk = p;
     }
     return blk;
