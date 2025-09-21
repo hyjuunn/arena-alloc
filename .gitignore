@@ -1,0 +1,8 @@
+# build
+app
+bench
+*.o
+
+# editors
+.vscode/
+.DS_Store
